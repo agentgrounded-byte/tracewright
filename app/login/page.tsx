@@ -24,7 +24,7 @@ export default function LoginPage() {
   const [codeBusy, setCodeBusy] = useState(false);
   const [codeError, setCodeError] = useState("");
 
-  async function sendLink(e: React.FormEvent) {
+  async function sendCode(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = email.trim();
     if (!trimmed) {
@@ -36,9 +36,6 @@ export default function LoginPage() {
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOtp({
       email: trimmed,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
     });
     setBusy(false);
     if (error) setError(error.message);
@@ -84,14 +81,8 @@ export default function LoginPage() {
         {sent ? (
           <>
             <p>
-              Check <strong>{email}</strong> for a sign-in link. Open it on
-              this device to continue.
-            </p>
-            <p className="hint" style={{ margin: "-6px 0 16px" }}>
-              Link not working? Some email apps open links automatically
-              before you click them, which uses up a one-time link. Enter the
-              6-digit code from the same email instead — it&apos;s in the
-              same message as the link.
+              We sent a 6-digit code to <strong>{email}</strong>. Enter it
+              below to sign in.
             </p>
             <form onSubmit={verifyCode}>
               <input
@@ -126,11 +117,11 @@ export default function LoginPage() {
         ) : (
           <>
             <p>
-              Sign in with your work email. We&apos;ll send you a one-time link
-              — no password to remember. Your name is attached to every change
-              in the shared audit trail.
+              Sign in with your work email. We&apos;ll send you a one-time
+              6-digit code — no password to remember. Your name is attached
+              to every change in the shared audit trail.
             </p>
-            <form onSubmit={sendLink}>
+            <form onSubmit={sendCode}>
               <input
                 type="email"
                 autoComplete="email"
@@ -139,7 +130,7 @@ export default function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
               />
               <button type="submit" disabled={busy}>
-                {busy ? "Sending…" : "Email me a sign-in link"}
+                {busy ? "Sending…" : "Email me a sign-in code"}
               </button>
             </form>
             {error && (
