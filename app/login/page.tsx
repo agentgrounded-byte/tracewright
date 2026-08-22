@@ -46,7 +46,7 @@ export default function LoginPage() {
     e.preventDefault();
     const trimmed = code.trim();
     if (!trimmed) {
-      setCodeError("Enter the 6-digit code from the email");
+      setCodeError("Enter the code from the email");
       return;
     }
     setCodeBusy(true);
@@ -81,7 +81,7 @@ export default function LoginPage() {
         {sent ? (
           <>
             <p>
-              We sent a 6-digit code to <strong>{email}</strong>. Enter it
+              We sent a sign-in code to <strong>{email}</strong>. Enter it
               below to sign in.
             </p>
             <form onSubmit={verifyCode}>
@@ -89,11 +89,11 @@ export default function LoginPage() {
                 type="text"
                 inputMode="numeric"
                 autoComplete="one-time-code"
-                placeholder="123456"
-                maxLength={6}
+                placeholder="12345678"
+                maxLength={10}
                 value={code}
                 onChange={(e) =>
-                  setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                  setCode(e.target.value.replace(/\D/g, "").slice(0, 10))
                 }
                 style={{ letterSpacing: "0.2em", textAlign: "center" }}
               />
@@ -118,7 +118,7 @@ export default function LoginPage() {
           <>
             <p>
               Sign in with your work email. We&apos;ll send you a one-time
-              6-digit code — no password to remember. Your name is attached
+              sign-in code — no password to remember. Your name is attached
               to every change in the shared audit trail.
             </p>
             <form onSubmit={sendCode}>
