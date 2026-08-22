@@ -124,3 +124,11 @@ export interface FlatClause {
   no: string;
   desc: string;
 }
+
+/** Identifies a single clause to scroll to / highlight after navigating to a
+ * tab from a search result. The receiving tab figures out what to do with it
+ * based on the clause's own state (archived, tag, links, etc). */
+export interface JumpTarget {
+  docId: string;
+  clauseId: string;
+}

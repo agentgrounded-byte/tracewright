@@ -4,6 +4,8 @@ import { useMemo } from "react";
 import { useApp } from "../AppContext";
 import {
   allClausesFlat,
+  CategoryRow,
+  clausesByCategory,
   clauseStatus,
   docTypesPresent,
   gapItems,
@@ -12,6 +14,68 @@ import {
 } from "@/lib/derive";
 import { daysUntil, fmtDate } from "@/lib/format";
 import { DOC_TYPE_LABEL, DocType } from "@/lib/types";
+
+const CATEGORY_SEGMENT_DEFS: { key: keyof CategoryRow["counts"]; label: string }[] = [
+  { key: "mapped", label: "Mapped" },
+  { key: "partial", label: "Partial" },
+  { key: "suggested", label: "Suggested" },
+  { key: "unmapped", label: "Unmapped" },
+];
+const CATEGORY_STAGGER = ["near", "mid", "far"];
+
+function CategoryRowView({ cat }: { cat: CategoryRow }) {
+  const t = cat.total;
+  const pct = (n: number) => (t ? (n / t) * 100 : 0);
+
+  let cum = 0;
+  const present: { key: string; label: string; count: number; mid: number }[] = [];
+  CATEGORY_SEGMENT_DEFS.forEach((seg) => {
+    const segPct = pct(cat.counts[seg.key]);
+    if (cat.counts[seg.key] > 0) {
+      present.push({ key: seg.key, label: seg.label, count: cat.counts[seg.key], mid: cum + segPct / 2 });
+    }
+    cum += segPct;
+  });
+
+  return (
+    <div className="cat-row">
+      <div className="cat-label">
+        <div className="cat-label-top">
+          <span className="cat-name">{cat.label}</span>
+          <span className="cat-count">{t}</span>
+        </div>
+        <div className="cat-desc">{cat.description}</div>
+      </div>
+      <div className="cat-track-wrap">
+        <div className="cat-bar-wrap">
+          <div
+            className="cat-track"
+            title={`Mapped ${cat.counts.mapped} · Partial ${cat.counts.partial} · Suggested ${cat.counts.suggested} · Unmapped ${cat.counts.unmapped}`}
+          >
+            <div className="cat-seg mapped" style={{ width: `${pct(cat.counts.mapped)}%` }} />
+            <div className="cat-seg partial" style={{ width: `${pct(cat.counts.partial)}%` }} />
+            <div className="cat-seg suggested" style={{ width: `${pct(cat.counts.suggested)}%` }} />
+            <div className="cat-seg unmapped" style={{ width: `${pct(cat.counts.unmapped)}%` }} />
+          </div>
+          <div className="cat-callouts">
+            {present.map((seg, i) => (
+              <div
+                key={seg.key}
+                className={`cat-callout ${seg.key} ${CATEGORY_STAGGER[i % CATEGORY_STAGGER.length]}`}
+                style={{ left: `${seg.mid}%` }}
+              >
+                <span className="callout-tick" />
+                <span className="callout-label">
+                  {seg.label} ({seg.count})
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function DashboardTab() {
   const { data } = useApp();
@@ -88,6 +152,9 @@ export default function DashboardTab() {
     };
   }, [data]);
 
+  const catData = useMemo(() => clausesByCategory(data), [data]);
+  const nonEmptyCategories = catData.categories.filter((c) => c.total > 0);
+
   return (
     <section>
       <div className="section-head">
@@ -123,6 +190,22 @@ export default function DashboardTab() {
           <div className="num">{stats.flagged}</div>
           <div className="lbl">Flagged for re-check</div>
         </div>
+      </div>
+
+      <div className="coverage-bar-wrap">
+        <h3>Clauses by Category</h3>
+        <div className="hint" style={{ margin: "0 0 10px" }}>
+          {!catData.total
+            ? "Add documents to see the category breakdown."
+            : catData.detectedCount < 9
+            ? `${catData.detectedCount} major section(s) identified from clause numbers in this project (fewer than 9 — the document may have fewer distinct sections); everything else falls under "Others".`
+            : `The 9 largest major sections identified from clause numbers in this project, plus "Others" for smaller sections and clauses with no parseable section number.`}
+        </div>
+        {nonEmptyCategories.length ? (
+          nonEmptyCategories.map((cat, i) => <CategoryRowView key={i} cat={cat} />)
+        ) : (
+          <div className="hint">No clauses to categorize yet.</div>
+        )}
       </div>
 
       <div className="coverage-bar-wrap">

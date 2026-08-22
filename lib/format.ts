@@ -30,3 +30,20 @@ export function isoDateOffset(days: number) {
 export function normClauseNo(no: string) {
   return String(no || "").trim().toLowerCase();
 }
+
+/** Scrolls an element into view and briefly flashes it — used to draw the eye
+ * to a row after navigating there from a search result. */
+export function flashHighlightEl(el: Element | null) {
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.classList.add("search-highlight");
+  setTimeout(() => el.classList.remove("search-highlight"), 1800);
+}
+
+/** Runs `fn` after the browser has painted the next frame (twice, to be safe
+ * against a state update that hasn't committed to the DOM yet). Use this to
+ * scroll to / query for an element right after a setState that changes what's
+ * rendered (e.g. jumping to a page containing a search result). */
+export function afterPaint(fn: () => void) {
+  requestAnimationFrame(() => requestAnimationFrame(fn));
+}

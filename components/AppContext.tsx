@@ -15,6 +15,7 @@ import {
   ProjectSummary,
   emptyProjectData,
   GapMeta,
+  JumpTarget,
 } from "@/lib/types";
 
 export interface Me {
@@ -54,6 +55,8 @@ interface Ctx {
   saveGapMeta: (key: string, patch: Partial<GapMeta>) => Promise<void>;
   confirmDialog: (message: string, okLabel?: string) => Promise<boolean>;
   promptDialog: (message: string, value?: string) => Promise<string | null>;
+  jumpTarget: JumpTarget | null;
+  setJumpTarget: (t: JumpTarget | null) => void;
 }
 
 const AppCtx = createContext<Ctx | null>(null);
@@ -79,6 +82,7 @@ export function AppProvider({
   const [toastMsg, setToastMsg] = useState("");
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
   const [promptState, setPromptState] = useState<PromptState | null>(null);
+  const [jumpTarget, setJumpTarget] = useState<JumpTarget | null>(null);
   const sessionConfirmed = useRef<Set<string>>(new Set());
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -124,6 +128,7 @@ export function AppProvider({
     async (id: string) => {
       setProjectId(id);
       sessionConfirmed.current = new Set();
+      setJumpTarget(null);
       await loadProject(id);
     },
     [loadProject]
@@ -248,6 +253,8 @@ export function AppProvider({
     saveGapMeta,
     confirmDialog,
     promptDialog,
+    jumpTarget,
+    setJumpTarget,
   };
 
   return (

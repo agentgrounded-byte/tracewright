@@ -17,29 +17,9 @@ import {
 
 type Row = Record<string, string>;
 
-const BLANK_ROW: Row = {
-  "Tender Clause": "",
-  "Tender Description": "",
-  "Requirement Clause": "",
-  "Requirement Description": "",
-  "UAT Clause": "",
-  "UAT Description": "",
-  Status: "",
-  Disposition: "",
-  Owner: "",
-  "Target Date": "",
-  Notes: "",
-};
-
-const COL_PREFIX: Record<DocType, string> = {
-  tender: "Tender",
-  requirement: "Requirement",
-  uat: "UAT",
-};
-
 export function exportRTM(data: ProjectData, projectName: string) {
-  const rows: Row[] = [];
-
+  // --- Sheet 1: RTM (confirmed links only)
+  const rtmRows: Row[] = [];
   data.links
     .filter((l) => l.status === "confirmed")
     .forEach((link) => {
@@ -61,7 +41,7 @@ export function exportRTM(data: ProjectData, projectName: string) {
         }
       });
       const meta = gapMetaFor(data, link.id);
-      rows.push({
+      rtmRows.push({
         "Tender Clause": byType.tender.join("; "),
         "Tender Description": descByType.tender.join("; "),
         "Requirement Clause": byType.requirement.join("; "),
@@ -78,33 +58,69 @@ export function exportRTM(data: ProjectData, projectName: string) {
       });
     });
 
+  // --- Sheet 2: Informational clauses (excluded from mapping entirely)
+  const informationalRows: Row[] = [];
+  data.documents.forEach((doc) => {
+    doc.clauses.forEach((c) => {
+      if (c.tag === "informational") {
+        informationalRows.push({
+          "Document Type": DOC_TYPE_LABEL[doc.type],
+          "Document Name": doc.name,
+          "Clause No": c.no || "",
+          Description: c.desc || "",
+          Retired: c.archived ? "Yes" : "",
+        });
+      }
+    });
+  });
+
+  // --- Sheet 3: Unmapped clauses (no confirmed link at all)
+  const unmappedRows: Row[] = [];
   allClausesFlat(data).forEach((c) => {
     const key = clauseKey(c.docId, c.clauseId);
     if (confirmedLinksCoveringKey(data, key).length === 0) {
       const meta = gapMetaFor(data, key);
-      const row: Row = {
-        ...BLANK_ROW,
-        Status: "unmapped",
+      unmappedRows.push({
+        "Document Type": DOC_TYPE_LABEL[c.docType],
+        "Document Name": c.docName,
+        "Clause No": c.no || "",
+        Description: c.desc || "",
         Disposition: meta.disposition
           ? DISPOSITION_LABEL[meta.disposition] || meta.disposition
           : "",
         Owner: meta.owner || "",
         "Target Date": meta.targetDate || "",
         Notes: meta.notes || "",
-      };
-      row[`${COL_PREFIX[c.docType]} Clause`] = c.no;
-      row[`${COL_PREFIX[c.docType]} Description`] = c.desc;
-      rows.push(row);
+      });
     }
   });
 
-  const ws = XLSX.utils.json_to_sheet(rows);
-  (ws as any)["!cols"] = [
+  const wb = XLSX.utils.book_new();
+
+  const wsRtm = XLSX.utils.json_to_sheet(
+    rtmRows.length ? rtmRows : [{ "Tender Clause": "(none yet)" }]
+  );
+  (wsRtm as any)["!cols"] = [
     { wch: 14 }, { wch: 32 }, { wch: 16 }, { wch: 32 }, { wch: 12 },
     { wch: 32 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 24 },
   ];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "RTM");
+  XLSX.utils.book_append_sheet(wb, wsRtm, "RTM");
+
+  const wsInfo = XLSX.utils.json_to_sheet(
+    informationalRows.length ? informationalRows : [{ "Document Type": "(none yet)" }]
+  );
+  (wsInfo as any)["!cols"] = [
+    { wch: 16 }, { wch: 28 }, { wch: 14 }, { wch: 44 }, { wch: 10 },
+  ];
+  XLSX.utils.book_append_sheet(wb, wsInfo, "Informational");
+
+  const wsUnmapped = XLSX.utils.json_to_sheet(
+    unmappedRows.length ? unmappedRows : [{ "Document Type": "(none yet)" }]
+  );
+  (wsUnmapped as any)["!cols"] = [
+    { wch: 16 }, { wch: 28 }, { wch: 14 }, { wch: 44 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 24 },
+  ];
+  XLSX.utils.book_append_sheet(wb, wsUnmapped, "Unmapped");
 
   const auditRows = (data.auditLog || []).map((a) => ({
     Time: fmtDateTime(a.ts),
@@ -121,7 +137,11 @@ export function exportRTM(data: ProjectData, projectName: string) {
   }
 
   XLSX.writeFile(wb, `RTM_${projectName.replace(/[^a-z0-9]+/gi, "_")}.xlsx`);
-  return rows.length;
+  return {
+    confirmed: rtmRows.length,
+    informational: informationalRows.length,
+    unmapped: unmappedRows.length,
+  };
 }
 
 export { DOC_TYPE_LABEL };

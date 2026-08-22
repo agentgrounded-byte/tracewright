@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { useApp } from "../AppContext";
+import Pagination from "../Pagination";
 import * as api from "@/lib/api";
-import { gapItems, gapIsOpen, gapMetaFor } from "@/lib/derive";
+import { GENERIC_PAGE_SIZE, gapItems, gapIsOpen, gapMetaFor } from "@/lib/derive";
 import { daysUntil } from "@/lib/format";
 import { DISPOSITION_LABEL, DOC_TYPE_LABEL, GapItem } from "@/lib/types";
 
@@ -24,6 +25,7 @@ export default function GapsTab() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkOwner, setBulkOwner] = useState("");
   const [bulkDate, setBulkDate] = useState("");
+  const [page, setPage] = useState(1);
 
   const items = useMemo(() => gapItems(data), [data]);
 
@@ -35,6 +37,11 @@ export default function GapsTab() {
     return true;
   });
   const visibleKeys = visible.map((i) => i.key);
+
+  const totalPages = Math.max(1, Math.ceil(visible.length / GENERIC_PAGE_SIZE));
+  const current = Math.min(Math.max(page, 1), totalPages);
+  const startIdx = (current - 1) * GENERIC_PAGE_SIZE;
+  const pageItems = visible.slice(startIdx, startIdx + GENERIC_PAGE_SIZE);
 
   function refLabel(item: GapItem) {
     return item.refs[0]?.no || item.key;
@@ -161,7 +168,10 @@ export default function GapsTab() {
           <button
             key={f}
             className={filter === f ? "active" : ""}
-            onClick={() => setFilter(f)}
+            onClick={() => {
+              setFilter(f);
+              setPage(1);
+            }}
           >
             {f[0].toUpperCase() + f.slice(1)}
           </button>
@@ -246,7 +256,8 @@ export default function GapsTab() {
       </div>
 
       {visible.length ? (
-        visible.map((item) => {
+        <>
+        {pageItems.map((item) => {
           const meta = gapMetaFor(data, item.key);
           const due = daysUntil(meta.targetDate);
           const kind = item.type === "clause" ? "unmapped" : "partial";
@@ -425,7 +436,17 @@ export default function GapsTab() {
               </div>
             </div>
           );
-        })
+        })}
+        <Pagination
+          page={current}
+          totalPages={totalPages}
+          totalItems={visible.length}
+          pageSize={GENERIC_PAGE_SIZE}
+          startIdx={startIdx}
+          onPrev={() => setPage(current - 1)}
+          onNext={() => setPage(current + 1)}
+        />
+        </>
       ) : (
         <div className="empty-state">
           <h3>No gaps here</h3>

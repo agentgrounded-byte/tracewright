@@ -1,15 +1,54 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useApp } from "../AppContext";
+import Pagination from "../Pagination";
 import * as api from "@/lib/api";
-import { clauseLabel, linkSource, linkStatus } from "@/lib/derive";
-import { DocType } from "@/lib/types";
+import {
+  GENERIC_PAGE_SIZE,
+  clauseLabel,
+  linkSource,
+  linkStatus,
+} from "@/lib/derive";
+import { afterPaint, flashHighlightEl } from "@/lib/format";
+import { DocType, clauseKey } from "@/lib/types";
 
 export default function RtmTab() {
-  const { data, setData, audit, toast, confirmDialog, unmarkSessionConfirmed } =
-    useApp();
+  const {
+    data,
+    setData,
+    audit,
+    toast,
+    confirmDialog,
+    unmarkSessionConfirmed,
+    jumpTarget,
+    setJumpTarget,
+  } = useApp();
+  const [page, setPage] = useState(1);
 
   const confirmed = data.links.filter((l) => l.status === "confirmed");
+  const totalPages = Math.max(1, Math.ceil(confirmed.length / GENERIC_PAGE_SIZE));
+  const current = Math.min(Math.max(page, 1), totalPages);
+  const startIdx = (current - 1) * GENERIC_PAGE_SIZE;
+  const pageItems = confirmed.slice(startIdx, startIdx + GENERIC_PAGE_SIZE);
+
+  useEffect(() => {
+    if (!jumpTarget) return;
+    const key = clauseKey(jumpTarget.docId, jumpTarget.clauseId);
+    const link = confirmed.find((l) => l.clauseKeys.includes(key));
+    if (!link) {
+      setJumpTarget(null);
+      return;
+    }
+    const idx = confirmed.findIndex((l) => l.id === link.id);
+    if (idx >= 0) setPage(Math.floor(idx / GENERIC_PAGE_SIZE) + 1);
+    afterPaint(() => {
+      const el = document.querySelector(`tr[data-link-id="${link.id}"]`);
+      flashHighlightEl(el);
+    });
+    setJumpTarget(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jumpTarget]);
 
   async function removeLink(linkId: string) {
     const ok = await confirmDialog(
@@ -59,6 +98,11 @@ export default function RtmTab() {
               retired
             </span>
           )}
+          {c!.tag === "informational" && (
+            <span className="badge info" style={{ marginLeft: 4 }}>
+              informational
+            </span>
+          )}
           <span className="rtm-desc">{c!.desc || ""}</span>
         </div>
       ))
@@ -79,6 +123,7 @@ export default function RtmTab() {
       </div>
 
       {confirmed.length ? (
+        <>
         <div className="rtm-table-wrap">
           <table className="rtm-table">
             <thead>
@@ -92,7 +137,7 @@ export default function RtmTab() {
               </tr>
             </thead>
             <tbody>
-              {confirmed.map((link) => {
+              {pageItems.map((link) => {
                 const byType: Record<DocType, ReturnType<typeof clauseLabel>[]> = {
                   tender: [],
                   requirement: [],
@@ -105,7 +150,7 @@ export default function RtmTab() {
                 const st = linkStatus(data, link);
                 const source = linkSource(link);
                 return (
-                  <tr key={link.id}>
+                  <tr key={link.id} data-link-id={link.id}>
                     <td>{cell(byType.tender)}</td>
                     <td>{cell(byType.requirement)}</td>
                     <td>{cell(byType.uat)}</td>
@@ -156,6 +201,16 @@ export default function RtmTab() {
             </tbody>
           </table>
         </div>
+        <Pagination
+          page={current}
+          totalPages={totalPages}
+          totalItems={confirmed.length}
+          pageSize={GENERIC_PAGE_SIZE}
+          startIdx={startIdx}
+          onPrev={() => setPage(current - 1)}
+          onNext={() => setPage(current + 1)}
+        />
+        </>
       ) : (
         <div className="empty-state">
           <h3>No confirmed mappings yet</h3>

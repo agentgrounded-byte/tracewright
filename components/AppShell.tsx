@@ -1,9 +1,20 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useApp } from "./AppContext";
-import { gapItems, gapMetaFor, gapIsOpen } from "@/lib/derive";
+import {
+  gapItems,
+  gapMetaFor,
+  gapIsOpen,
+  runSearch,
+  SEARCH_DROPDOWN_CAP,
+  SEARCH_STATUS_BADGE_CLASS,
+  SEARCH_STATUS_LABEL,
+  SearchResult,
+  SearchStatus,
+} from "@/lib/derive";
 import { exportRTM } from "@/lib/export";
+import { DOC_TYPE_LABEL } from "@/lib/types";
 import DocumentsTab from "./tabs/DocumentsTab";
 import MappingTab from "./tabs/MappingTab";
 import SuggestionsTab from "./tabs/SuggestionsTab";
@@ -12,6 +23,7 @@ import GapsTab from "./tabs/GapsTab";
 import DashboardTab from "./tabs/DashboardTab";
 import AuditTab from "./tabs/AuditTab";
 import ConfigTab from "./tabs/ConfigTab";
+import SearchTab from "./tabs/SearchTab";
 import NewProjectModal from "./modals/NewProjectModal";
 
 type TabName =
@@ -22,7 +34,8 @@ type TabName =
   | "gaps"
   | "dashboard"
   | "audit"
-  | "config";
+  | "config"
+  | "search";
 
 const TABS: { key: TabName; label: string }[] = [
   { key: "documents", label: "Documents" },
@@ -33,7 +46,17 @@ const TABS: { key: TabName; label: string }[] = [
   { key: "dashboard", label: "Dashboard" },
   { key: "audit", label: "Audit Log" },
   { key: "config", label: "Configuration" },
+  { key: "search", label: "Search" },
 ];
+
+const STATUS_TAB: Record<SearchStatus, TabName> = {
+  informational: "documents",
+  retired: "documents",
+  mapped: "rtm",
+  partial: "rtm",
+  suggested: "suggestions",
+  unmapped: "mapping",
+};
 
 export default function AppShell() {
   const app = useApp();
@@ -56,6 +79,9 @@ export default function AppShell() {
   const [nameDraft, setNameDraft] = useState("");
   const [loadingSample, setLoadingSample] = useState(false);
   const [pendingSuggestions, setPendingSuggestions] = useState(0);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const searchWrapRef = useRef<HTMLDivElement>(null);
 
   const suggestCount = useMemo(
     () => data.links.filter((l) => l.status === "suggested").length,
@@ -65,6 +91,37 @@ export default function AppShell() {
     return gapItems(data).filter((i) => gapIsOpen(gapMetaFor(data, i.key)))
       .length;
   }, [data]);
+
+  const searchResults = useMemo(
+    () => runSearch(data, searchQuery),
+    [data, searchQuery]
+  );
+
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (
+        searchWrapRef.current &&
+        !searchWrapRef.current.contains(e.target as Node)
+      ) {
+        setShowSearchDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
+
+  function jumpToSearchResult(r: SearchResult) {
+    setShowSearchDropdown(false);
+    setTab(STATUS_TAB[r.status]);
+    app.setJumpTarget({ docId: r.doc.id, clauseId: r.clause.id });
+  }
+
+  async function handleSwitchProject(id: string) {
+    setSearchQuery("");
+    setShowSearchDropdown(false);
+    app.setJumpTarget(null);
+    await switchProject(id);
+  }
 
   async function loadSample() {
     const ok = await confirmDialog(
@@ -91,8 +148,11 @@ export default function AppShell() {
       toast("Nothing to export yet");
       return;
     }
-    const n = exportRTM(data, projectName || "project");
-    app.audit("Exported RTM to Excel", n + " rows");
+    const counts = exportRTM(data, projectName || "project");
+    app.audit(
+      "Exported RTM to Excel",
+      `${counts.confirmed} confirmed, ${counts.informational} informational, ${counts.unmapped} unmapped row(s)`
+    );
     toast("Exported");
   }
 
@@ -144,10 +204,88 @@ export default function AppShell() {
           </div>
         </div>
         <div className="topbar-right">
+          <div className="header-search" ref={searchWrapRef}>
+            <input
+              type="text"
+              id="headerSearchInput"
+              placeholder="🔎 Search clauses…"
+              autoComplete="off"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setShowSearchDropdown(true);
+              }}
+              onFocus={() => {
+                if (searchQuery.trim()) setShowSearchDropdown(true);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  (e.target as HTMLInputElement).blur();
+                  setShowSearchDropdown(false);
+                }
+                if (e.key === "Enter" && searchQuery.trim()) {
+                  setShowSearchDropdown(false);
+                  setTab("search");
+                }
+              }}
+            />
+            {showSearchDropdown && searchQuery.trim() && (
+              <div className="header-search-results" id="headerSearchResults">
+                {searchResults.length ? (
+                  <>
+                    {searchResults.slice(0, SEARCH_DROPDOWN_CAP).map((r) => (
+                      <div
+                        key={r.doc.id + "::" + r.clause.id}
+                        className="search-result-row"
+                        onClick={() => jumpToSearchResult(r)}
+                      >
+                        <div className="txt">
+                          <span
+                            className={"doc-type-badge " + r.doc.type}
+                            style={{ margin: "0 6px 0 0", verticalAlign: "middle" }}
+                          >
+                            {DOC_TYPE_LABEL[r.doc.type]}
+                          </span>
+                          <span className="no">{r.clause.no || "—"}</span>
+                          <span className="desc">
+                            {(r.clause.desc || "").slice(0, 70)}
+                            {(r.clause.desc || "").length > 70 ? "…" : ""}
+                          </span>
+                          <div className="meta">{r.doc.name}</div>
+                        </div>
+                        <div className="statuscol">
+                          <span
+                            className={"badge " + SEARCH_STATUS_BADGE_CLASS[r.status]}
+                          >
+                            {SEARCH_STATUS_LABEL[r.status]}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                    {searchResults.length > SEARCH_DROPDOWN_CAP && (
+                      <div
+                        className="search-see-all"
+                        onClick={() => {
+                          setShowSearchDropdown(false);
+                          setTab("search");
+                        }}
+                      >
+                        See all {searchResults.length} results in Search tab →
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="hint" style={{ padding: 10 }}>
+                    No matches in this project.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
           <select
             className="project-select"
             value={projectId ?? ""}
-            onChange={(e) => switchProject(e.target.value)}
+            onChange={(e) => handleSwitchProject(e.target.value)}
           >
             {projects.map((p) => (
               <option key={p.id} value={p.id}>
@@ -253,6 +391,13 @@ export default function AppShell() {
           {tab === "dashboard" && <DashboardTab />}
           {tab === "audit" && <AuditTab />}
           {tab === "config" && <ConfigTab />}
+          {tab === "search" && (
+            <SearchTab
+              query={searchQuery}
+              setQuery={setSearchQuery}
+              onJump={jumpToSearchResult}
+            />
+          )}
         </>
       )}
 

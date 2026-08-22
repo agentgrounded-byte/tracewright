@@ -2,14 +2,17 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useApp } from "../AppContext";
+import Pagination from "../Pagination";
 import * as api from "@/lib/api";
 import {
+  GENERIC_PAGE_SIZE,
   RAIL_PAGE_SIZE,
   clauseLabel,
   clauseStatus,
   docTypesPresent,
   linkStatus,
 } from "@/lib/derive";
+import { afterPaint, flashHighlightEl } from "@/lib/format";
 import {
   DOC_TYPE_LABEL,
   DOC_TYPE_ORDER,
@@ -40,6 +43,8 @@ export default function MappingTab({
     markSessionConfirmed,
     unmarkSessionConfirmed,
     confirmDialog,
+    jumpTarget,
+    setJumpTarget,
   } = useApp();
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -52,6 +57,7 @@ export default function MappingTab({
   });
   const [running, setRunning] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [sessionPage, setSessionPage] = useState(1);
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -106,6 +112,27 @@ export default function MappingTab({
     });
     return out;
   }, [railClauses, ordered, railFilter, search, data]);
+
+  /* ------------------------- jump-to from search ------------------------- */
+  useEffect(() => {
+    if (!jumpTarget) return;
+    const doc = data.documents.find((d) => d.id === jumpTarget.docId);
+    const clause = doc?.clauses.find((c) => c.id === jumpTarget.clauseId);
+    if (!doc || !clause) {
+      setJumpTarget(null);
+      return;
+    }
+    setRailFilter("all");
+    setPage({ tender: 1, requirement: 1, uat: 1 });
+    setSearch((s) => ({ ...s, [doc.type]: clause.no || "" }));
+    const key = clauseKey(doc.id, clause.id);
+    afterPaint(() => {
+      const chip = document.querySelector(`.chip[data-key="${CSS.escape(key)}"]`);
+      flashHighlightEl(chip);
+    });
+    setJumpTarget(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jumpTarget]);
 
   /* --------------------------- connector lines --------------------------- */
   useLayoutEffect(() => {
@@ -274,6 +301,16 @@ export default function MappingTab({
 
   const sessionLinks = data.links.filter(
     (l) => l.status === "confirmed" && sessionConfirmed.has(l.id)
+  );
+  const sessionTotalPages = Math.max(
+    1,
+    Math.ceil(sessionLinks.length / GENERIC_PAGE_SIZE)
+  );
+  const sessionCurrent = Math.min(Math.max(sessionPage, 1), sessionTotalPages);
+  const sessionStartIdx = (sessionCurrent - 1) * GENERIC_PAGE_SIZE;
+  const sessionPageItems = sessionLinks.slice(
+    sessionStartIdx,
+    sessionStartIdx + GENERIC_PAGE_SIZE
   );
 
   return (
@@ -505,7 +542,7 @@ export default function MappingTab({
             </tr>
           </thead>
           <tbody>
-            {sessionLinks.map((link) => {
+            {sessionPageItems.map((link) => {
               const byType: Record<DocType, string[]> = {
                 tender: [],
                 requirement: [],
@@ -550,6 +587,15 @@ export default function MappingTab({
             No links confirmed in this session yet.
           </div>
         )}
+        <Pagination
+          page={sessionCurrent}
+          totalPages={sessionTotalPages}
+          totalItems={sessionLinks.length}
+          pageSize={GENERIC_PAGE_SIZE}
+          startIdx={sessionStartIdx}
+          onPrev={() => setSessionPage(sessionCurrent - 1)}
+          onNext={() => setSessionPage(sessionCurrent + 1)}
+        />
       </div>
     </section>
   );
